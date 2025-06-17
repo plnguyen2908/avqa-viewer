@@ -6,9 +6,9 @@ import "./index.css";
 
 const supabase = createClient("https://dukoobhuwmiyyjapevht.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1a29vYmh1d21peXlqYXBldmh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxMDI5MDMsImV4cCI6MjA2NTY3ODkwM30.HL_bfVyzgHcNazmABOtA-5zbsKqnJnSfX8WuHEuS4h0");
 
-const CATEGORY_OPTIONS = ["Perception", "Reasoning", "Action"];
-const SUBCATEGORY_OPTIONS = ["Coarse", "Fine", "Temporal"];
-const TASK_OPTIONS = ["speech_matching", "event_localization", "qa"];
+const CATEGORY_OPTIONS = ["Perception", "Reasoning"];
+const SUBCATEGORY_OPTIONS = ["Coarse Perception", "Fine-grained Perception", "Temporal"];
+const TASK_OPTIONS = ["Speech Order Recognition ", "Speaker Identification", "Speaker Counting", "Activity Recognition", "Speech matching", "Emotion Detection", "Celebrity Recognition"];
 
 export default function AVQAViewer() {
   const [data, setData] = useState([]);

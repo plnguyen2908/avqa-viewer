@@ -10,7 +10,7 @@
         "lint": "eslint .",
         "preview": "vite preview",
         "predeploy": "npm run build",
-        "deploy": "vite build && npx vite-plugin-gh-pages"
+        "deploy": "gh-pages -d dist"
     },
     "dependencies": {
         "@supabase/supabase-js": "^2.50.0",
