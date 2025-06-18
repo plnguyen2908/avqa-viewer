@@ -101,6 +101,7 @@ approved.forEach(row => {
         acc.push(group);
       }
       group.questions.push({
+        video_type: row.video_type,
         category: row.category,
         sub_category: row.sub_category,
         task_id: row.task_id,
