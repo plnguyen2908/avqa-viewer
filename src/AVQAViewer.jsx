@@ -15,23 +15,46 @@ export default function AVQAViewer() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [newVideoURL, setNewVideoURL] = useState("");
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({ video_id: "", category: "", sub_category: "", task_id: "", approved: "" });
+  const [filters, setFilters] = useState({ video_id: "", category: "", sub_category: "", task_id: "", approved: "", annotated: "" });
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState("");
   const perPage = 30;
 
+ useEffect(() => {
+  fetchData();
+}, [page]);
+
   useEffect(() => {
+    setPage(1); // Reset về trang đầu khi thay đổi filter
     fetchData();
-  }, [page]);
+  }, [filters]);
+
 
   const fetchData = async () => {
     let query = supabase.from("avqa_annotations").select("*").order("created_at", { ascending: false });
     Object.entries(filters).forEach(([key, value]) => {
-      if (value) query = query.ilike(key, `%${value}%`);
+      if (value !== "") {
+        if (key === "approved") {
+          query = query.eq("approved", value === "true");
+        } else {
+          query = query.ilike(key, `%${value}%`);
+        }
+      }
     });
     const { data: rows } = await query;
-    setData(rows || []);
+  if (!rows) return setData([]);
+
+    const filtered = filters.annotated
+      ? rows.filter(row => {
+          const complete = row.category && row.sub_category && row.task_id &&
+            row.question && row.choices?.length === 4 && row.choices.every(c => c) &&
+            row.answer && row.reason;
+          return filters.annotated === "true" ? complete : !complete;
+        })
+      : rows;
+
+    setData(filtered);
   };
 
   const downloadApproved = async () => {
@@ -199,6 +222,12 @@ approved.forEach(row => {
           <option value="">-- Task ID --</option>
           {TASK_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
         </select>
+        <select className="input" value={filters.annotated} onChange={e => setFilters({ ...filters, annotated: e.target.value })}>
+          <option value="">-- Annotated --</option>
+          <option value="true">✅ Annotated</option>
+          <option value="false">❌ Not Annotated</option>
+        </select>
+
         <select className="input" value={filters.approved} onChange={e => setFilters({ ...filters, approved: e.target.value })} onBlur={fetchData}>
           <option value="">-- Approved --</option>
           <option value="true">✅</option>
@@ -246,7 +275,10 @@ approved.forEach(row => {
                   <input className="input" value={choice} onChange={e => updateChoice(idx, e.target.value)} />
                 </div>
               ))
-            ) : (item.choices?.join(', ') || '-')}
+            ) : <div style={{ whiteSpace: 'pre-line' }}>
+              {(item.choices || []).join('\n')}
+            </div>
+            }
 
             <p><b>answer:</b> {editingId === item.id ? (
             <select className="input" value={draft.answer} onChange={e => updateField("answer", e.target.value)}>
