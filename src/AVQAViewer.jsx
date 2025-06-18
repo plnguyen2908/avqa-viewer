@@ -9,13 +9,14 @@ const supabase = createClient("https://dukoobhuwmiyyjapevht.supabase.co", "eyJhb
 const CATEGORY_OPTIONS = ["Perception", "Reasoning"];
 const SUBCATEGORY_OPTIONS = ["Coarse Perception", "Fine-grained Perception", "Temporal"];
 const TASK_OPTIONS = ["Speech Order Recognition ", "Speaker Identification", "Speaker Counting", "Activity Recognition", "Speech matching", "Emotion Detection", "Celebrity Recognition"];
+const VIDEO_TYPE_OPTIONS = ["movie clip", "interview"];
 
 export default function AVQAViewer() {
   const [data, setData] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [newVideoURL, setNewVideoURL] = useState("");
   const [page, setPage] = useState(1);
-  const [filters, setFilters] = useState({ video_id: "", category: "", sub_category: "", task_id: "", approved: "", annotated: "" });
+  const [filters, setFilters] = useState({ video_id: "", video_type: "", category: "", sub_category: "", task_id: "", approved: "", annotated: "" });
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState("");
@@ -33,29 +34,44 @@ export default function AVQAViewer() {
 
   const fetchData = async () => {
     let query = supabase.from("avqa_annotations").select("*").order("created_at", { ascending: false });
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== "") {
-        if (key === "approved") {
-          query = query.eq("approved", value === "true");
-        } else {
-          query = query.ilike(key, `%${value}%`);
-        }
+    // ⚠️ BỎ QUA filter annotated ở đây!
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== "" && key !== "annotated") {
+      if (key === "approved") {
+        query = query.eq("approved", value === "true");
+      } else if (key === "video_type") {
+        query = query.eq("video_type", value);
+      } else {
+        query = query.ilike(key, `%${value}%`);
       }
-    });
-    const { data: rows } = await query;
-  if (!rows) return setData([]);
+    }
+  });
 
-    const filtered = filters.annotated
-      ? rows.filter(row => {
-          const complete = row.category && row.sub_category && row.task_id &&
-            row.question && row.choices?.length === 4 && row.choices.every(c => c) &&
-            row.answer && row.reason;
-          return filters.annotated === "true" ? complete : !complete;
-        })
-      : rows;
+  const { data: rows } = await query;
+  if (!rows) return;
 
-    setData(filtered);
-  };
+  // ✅ Lọc theo annotated sau khi đã lấy hết dữ liệu
+  let filtered = rows;
+  if (filters.annotated === "true") {
+    filtered = rows.filter(row =>
+      row.category && row.sub_category && row.task_id &&
+      row.question && Array.isArray(row.choices) && row.choices.length === 4 &&
+      row.choices.every(c => typeof c === "string" && c.trim() !== "") &&
+      row.answer && row.reason
+    );
+  } else if (filters.annotated === "false") {
+    filtered = rows.filter(row =>
+      !(
+        row.category && row.sub_category && row.task_id &&
+        row.question && Array.isArray(row.choices) && row.choices.length === 4 &&
+        row.choices.every(c => typeof c === "string" && c.trim() !== "") &&
+        row.answer && row.reason
+      )
+    );
+  }
+
+  setData(filtered);
+};
 
   const downloadApproved = async () => {
     const { data: approved } = await supabase
@@ -210,6 +226,16 @@ approved.forEach(row => {
 
       <div className="filters">
         <input placeholder="video_id" className="input" value={filters.video_id} onChange={e => setFilters({ ...filters, video_id: e.target.value })} onBlur={fetchData} />
+        <select
+          className="input"
+          value={filters.video_type}
+          onChange={e => setFilters({ ...filters, video_type: e.target.value })}
+        >
+          <option value="">-- Video Type --</option>
+          {VIDEO_TYPE_OPTIONS.map(opt => (
+            <option key={opt} value={opt}>{opt}</option>
+          ))}
+        </select>
         <select className="input" value={filters.category} onChange={e => setFilters({ ...filters, category: e.target.value })} onBlur={fetchData}>
           <option value="">-- Category --</option>
           {CATEGORY_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
@@ -230,8 +256,8 @@ approved.forEach(row => {
 
         <select className="input" value={filters.approved} onChange={e => setFilters({ ...filters, approved: e.target.value })} onBlur={fetchData}>
           <option value="">-- Approved --</option>
-          <option value="true">✅</option>
-          <option value="false">❌</option>
+          <option value="true">✅ Approved</option>
+          <option value="false">❌ Not Approved</option>
         </select>
       </div>
 
@@ -240,6 +266,7 @@ approved.forEach(row => {
           <div key={item.id} className="card">
             <iframe width="100%" height="180" src={`https://www.youtube.com/embed/${item.video_id}`} allowFullScreen title="YouTube Player" className="iframe" />
             <p><b>video_id:</b> {item.video_id}</p>
+            <p><b>video_type:</b> {item.video_type || '-'}</p>
             <p><b>category:</b> {editingId === item.id ? (
               <select className="input" value={draft.category} onChange={e => updateField("category", e.target.value)}>
                 <option value="">-- Category --</option>
