@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./index.css";
+import { useNavigate } from "react-router-dom";
+
 
 const supabase = createClient("https://dukoobhuwmiyyjapevht.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR1a29vYmh1d21peXlqYXBldmh0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTAxMDI5MDMsImV4cCI6MjA2NTY3ODkwM30.HL_bfVyzgHcNazmABOtA-5zbsKqnJnSfX8WuHEuS4h0");
 
@@ -21,6 +23,7 @@ export default function AVQAViewer() {
   const [draft, setDraft] = useState(null);
   const [error, setError] = useState("");
   const perPage = 30;
+  const navigate = useNavigate();
 
  useEffect(() => {
   fetchData();
@@ -80,19 +83,22 @@ export default function AVQAViewer() {
       .eq("approved", true);
       
     const groupedMap = {};
-approved.forEach(row => {
-  if (!groupedMap[row.video_id]) {
-    groupedMap[row.video_id] = [];
-  }
-  groupedMap[row.video_id].push({
-    category: row.category,
-    sub_category: row.sub_category,
-    task_id: row.task_id,
-    question: row.question,
-    choices: row.choices,
-    answer: row.answer
-  });
-});
+    approved.forEach(row => {
+      if (!groupedMap[row.video_id]) {
+        groupedMap[row.video_id] = [];
+      }
+      groupedMap[row.video_id].push({
+        category: row.category,
+        sub_category: row.sub_category,
+        task_id: row.task_id,
+        question: row.question,
+        choices: row.choices,
+        answer: row.answer,
+        start_time: row.start_time || null, 
+        end_time: row.end_time || null,
+        global_consistent: row.global_consistent === null ? null : row.global_consistent
+      });
+    });
 
     const grouped = approved.reduce((acc, row) => {
       let group = acc.find(g => g.video_id === row.video_id);
@@ -107,7 +113,10 @@ approved.forEach(row => {
         task_id: row.task_id,
         question: row.question,
         choices: row.choices,
-        answer: row.answer
+        answer: row.answer,
+        start_time: row.start_time || null, 
+        end_time: row.end_time || null,
+        global_consistent: row.global_consistent === null ? null : row.global_consistent
       });
       return acc;
     }, []);
@@ -130,6 +139,8 @@ approved.forEach(row => {
     setDraft(prev => ({ ...prev, [field]: value }));
   };
 
+  const isValidTime = (timeStr) => /^\d{2}:\d{2}$/.test(timeStr);
+
   const saveEdits = async (id) => {
     if (!draft.category || !draft.sub_category || !draft.task_id || !draft.question || !draft.answer || !draft.reason) {
       return setError("⚠️ All fields must be filled.");
@@ -138,8 +149,16 @@ approved.forEach(row => {
     if (filled.length !== 4) {
       return setError("⚠️ Exactly 4 choices must be filled (one per input).\n");
     }
+    if (
+      (draft.start_time && !isValidTime(draft.start_time)) ||
+      (draft.end_time && !isValidTime(draft.end_time))
+    ) {
+      return setError("⚠️ Start time and End time must be in MM:SS format.");
+    }
+
     const labeledChoices = draft.choices.map((c, i) => `${"ABCD"[i]}. ${c.trim()}`);
-    const payload = { ...draft, choices: labeledChoices };
+    const payload = { ...draft, choices: labeledChoices, start_time: draft.start_time?.trim() || null,
+    end_time: draft.end_time?.trim() || null, global_consistent: draft.global_consistent};
 
     setError("");
     await supabase.from("avqa_annotations").update(payload).eq("id", id);
@@ -176,6 +195,19 @@ approved.forEach(row => {
     fetchData();
   };
 
+  const deleteCard = async (id) => {
+    if (!window.confirm("⚠️ Do you want to delete this?")) return;
+    const { error } = await supabase
+      .from("avqa_annotations")
+      .delete()
+      .eq("id", id);
+    if (error) {
+      alert("❌ Delete unsuccessfully: " + error.message);
+    } else {
+      fetchData(); // làm mới danh sách sau khi xoá
+    }
+  };
+
   const toggleEdit = (item) => {
     if (editingId === item.id) {
       saveEdits(item.id);
@@ -185,13 +217,17 @@ approved.forEach(row => {
       let paddedChoices = item.choices?.map(c => c.replace(/^\w\.\s/, "")) || [];
       while (paddedChoices.length < 4) paddedChoices.push("");
       setDraft({
+        video_type: item.video_type || "",
         category: item.category || "",
         sub_category: item.sub_category || "",
         task_id: item.task_id || "",
         question: item.question || "",
         choices: paddedChoices,
         answer: item.answer || "",
-        reason: item.reason || ""
+        reason: item.reason || "", 
+        start_time: item.start_time || "",
+        end_time: item.end_time || "",
+        global_consistent: item.global_consistent ?? false
       });
     }
   };
@@ -199,11 +235,31 @@ approved.forEach(row => {
   const pageData = data.slice((page - 1) * perPage, page * perPage);
   const totalPages = Math.ceil(data.length / perPage);
 
+  const totalCount = data.length;
+
+  // Số mục đã annotated (mọi trường bắt buộc đều không rỗng)
+  const annotatedCount = data.filter(row =>
+    row.category &&
+    row.sub_category &&
+    row.task_id &&
+    row.question &&
+    Array.isArray(row.choices) && row.choices.length === 4 &&
+    row.choices.every(c => typeof c === 'string' && c.trim() !== '') &&
+    row.answer &&
+    row.reason
+  ).length;
+
+  // Số mục approved
+  const approvedCount = data.filter(row => row.approved).length;
+
   return (
     <div className="container">
       <header className="header-bar">
         <h1 className="header-title">AVQA Bench Annotation Viewer</h1>
+        
         <div className="login-bar">
+          <button className="btn" onClick={() => navigate("/guidance")}>📘 Guidance</button>
+
           {!isAdmin ? (
             <>
               <input id="username" placeholder="Username" className="input" />
@@ -223,6 +279,10 @@ approved.forEach(row => {
       <div className="controls">
         <input type="text" placeholder="YouTube link" value={newVideoURL} onChange={(e) => setNewVideoURL(e.target.value)} className="input" />
         <button onClick={addNewCard} className="btn primary">➕ Add</button>
+        <div className="header-stats">
+          <span>✍️ Annotated: {annotatedCount}</span>
+          <span>✅ Approved: {approvedCount}</span>
+        </div>
       </div>
 
       <div className="filters">
@@ -267,7 +327,14 @@ approved.forEach(row => {
           <div key={item.id} className="card">
             <iframe width="100%" height="180" src={`https://www.youtube.com/embed/${item.video_id}`} allowFullScreen title="YouTube Player" className="iframe" />
             <p><b>video_id:</b> {item.video_id}</p>
-            <p><b>video_type:</b> {item.video_type || '-'}</p>
+            {/* <p><b>video_type:</b> {item.video_type || '-'}</p> */}
+            <p><b>video_type:</b> {editingId === item.id ? (
+              <select className="input" value={draft.video_type} onChange={e => updateField("video_type", e.target.value)}>
+                <option value="">-- Video Type --</option>
+                {VIDEO_TYPE_OPTIONS.map(opt => <option key={opt}>{opt}</option>)}
+              </select>
+            ) : (item.video_type || '-')}</p>
+
             <p><b>category:</b> {editingId === item.id ? (
               <select className="input" value={draft.category} onChange={e => updateField("category", e.target.value)}>
                 <option value="">-- Category --</option>
@@ -315,6 +382,37 @@ approved.forEach(row => {
             </select>
             ) : (item.answer || '-')}</p>
 
+            <p><b>start_time:</b> {editingId === item.id ? (
+            <input
+              className="input"
+              value={draft.start_time}
+              onChange={e => updateField("start_time", e.target.value)}
+              placeholder="MM:SS"
+            />
+          ) : (item.start_time || '-')}</p>
+
+          <p><b>end_time:</b> {editingId === item.id ? (
+            <input
+              className="input"
+              value={draft.end_time}
+              onChange={e => updateField("end_time", e.target.value)}
+              placeholder="MM:SS"
+            />
+          ) : (item.end_time || '-')}</p>
+
+          <p><b>global_consistent</b> {editingId === item.id ? (
+          <select
+            className="input"
+            value={draft.global_consistent ? "true" : "false"}
+            onChange={e => updateField("global_consistent", e.target.value === "true")}
+          >
+            <option value="true">✅ True</option>
+            <option value="false">❌ False</option>
+          </select>
+        ) : (
+          item.global_consistent === true ? "✅ True" : item.global_consistent === false ? "❌ False" : "-"
+        )}</p>
+
 
             <p><b>reason for the answer (timestamp, ...):</b> {editingId === item.id ? (
               <textarea className="input" value={draft.reason} onChange={e => updateField("reason", e.target.value)} />
@@ -327,6 +425,13 @@ approved.forEach(row => {
             <div className="actions">
               <button className="btn small" disabled={item.approved && !isAdmin} onClick={() => toggleEdit(item)}>
                 {editingId === item.id ? '💾' : '✏️'}
+              </button>
+              <button
+                disabled={!isAdmin}
+                onClick={() => deleteCard(item.id)}
+                className={`btn small ${isAdmin ? 'danger' : 'disabled'}`}
+              >
+                🗑️
               </button>
               <button disabled={!isAdmin} onClick={() => approveCard(item.id)} className={`btn small ${isAdmin ? 'success' : 'disabled'}`}>✅</button>
             </div>
